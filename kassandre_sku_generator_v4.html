@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kassandre SKU Generator V3</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root{
+      --bg:#f7f3ee;--panel:#fffaf4;--ink:#251d18;--muted:#7f746b;--line:#ddd1c5;--accent:#7f1719;--soft:#efe5da;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+    header{padding:34px 42px;border-bottom:1px solid var(--line);background:var(--panel)}
+    h1{margin:0 0 8px;font-size:32px;letter-spacing:-.03em}
+    .sub{color:var(--muted);font-size:15px;line-height:1.5}
+    main{padding:30px 42px;display:grid;gap:22px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 8px 20px rgba(0,0,0,.03)}
+    h2{margin:0 0 14px;font-size:18px}
+    .grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr;gap:14px;align-items:end}
+    .grid4{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:12px}
+    label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+    input,select,button,textarea{font:inherit}
+    input,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+    input[type=file]{padding:10px;background:#fff}
+    button{border:0;border-radius:999px;padding:11px 17px;background:var(--ink);color:white;cursor:pointer}
+    button.secondary{background:var(--soft);color:var(--ink)}
+    button.accent{background:var(--accent)}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:top}
+    th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:#fbf6ef;position:sticky;top:0}
+    .tablewrap{max-height:430px;overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fff}
+    .sku{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;color:var(--accent)}
+    .pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 8px;background:#fff;color:var(--muted);font-size:12px}
+    .hint{color:var(--muted);font-size:13px;line-height:1.5}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .mapping{display:grid;grid-template-columns:1.1fr 1.5fr 1fr 1fr 1fr;gap:12px}
+    .mapbox{border:1px solid var(--line);border-radius:14px;padding:14px;background:#fff}
+    .mapbox textarea{width:100%;height:140px;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff;font-size:12px;line-height:1.45}
+    .small{font-size:12px;color:var(--muted);line-height:1.4;margin:6px 0}
+    .warn{color:#9b1c1c;font-size:12px}
+    @media(max-width:1100px){.grid,.grid4,.mapping{grid-template-columns:1fr 1fr}}
+    @media(max-width:650px){main,header{padding:22px}.grid,.grid4,.mapping{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header>
+  <h1>Kassandre SKU Generator</h1>
+  <div class="sub">
+    Format : <span class="mono">[COLLECTION][MODÈLE]_[MATIÈRE][COULEUR][HARDWARE]</span> · exemple <span class="sku">ODY1_01BES</span><br/>
+    V3 : les modèles sont gérés <b>par collection</b> : <span class="mono">ODY1</span>, <span class="mono">EIL1</span>, <span class="mono">EVA1</span> peuvent coexister.
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>1. Upload export Shopify</h2>
+    <div class="grid4">
+      <div><label>Fichier CSV / XLSX</label><input id="file" type="file" accept=".csv,.xlsx,.xls" /></div>
+      <div><label>Colonne titre produit</label><input id="titleCol" value="Title" /></div>
+      <div><label>Colonne SKU à remplir</label><input id="skuCol" value="Variant SKU" /></div>
+      <div><label>Mode</label><select id="mode"><option value="replace">Remplacer les SKU</option><option value="newcol">Créer une colonne NEW SKU</option></select></div>
+    </div>
+    <p class="hint">La collection est détectée via le dictionnaire Collections. Ensuite, le modèle est détecté via le dictionnaire modèles. Exemple : <span class="mono">ODY1</span> ne veut pas dire la même chose que <span class="mono">EIL1</span>.</p>
+    <div class="actions"><button class="accent" onclick="processFile()">Générer les SKU</button><button class="secondary" onclick="clearAll()">Reset</button></div>
+  </section>
+
+  <section class="card">
+    <h2>2. Création manuelle</h2>
+    <div class="grid">
+      <div><label>Collection</label><select id="mCollection" onchange="populateModelSelect();generateManual()"></select></div>
+      <div><label>Modèle</label><select id="mModel" onchange="generateManual()"></select></div>
+      <div><label>Matière</label><select id="mMaterial" onchange="generateManual()"></select></div>
+      <div><label>Couleur</label><select id="mColor" onchange="generateManual()"></select></div>
+      <div><label>Hardware</label><select id="mHardware" onchange="generateManual()"></select></div>
+      <div><label>SKU généré</label><input id="manualSku" readonly /></div>
+    </div>
+    <div class="actions"><button onclick="generateManual()">Créer le SKU</button><button class="secondary" onclick="copyManual()">Copier</button><button class="secondary" onclick="addManualRow()">Ajouter au tableau</button></div>
+  </section>
+
+  <section class="card">
+    <h2>3. Dictionnaire des codes</h2>
+    <div class="mapping">
+      <div class="mapbox">
+        <b>Collections</b>
+        <div class="small">Format : <span class="mono">CODE=Nom|mots-clés</span></div>
+        <textarea id="mapCollections"></textarea>
+      </div>
+      <div class="mapbox">
+        <b>Modèles</b>
+        <div class="small">Format : <span class="mono">COLLECTION:NUMÉRO=Nom|mots-clés</span><br/>Exemple : <span class="mono">ODY:1=Maxi Hobo|maxi</span></div>
+        <textarea id="mapModels"></textarea>
+      </div>
+      <div class="mapbox">
+        <b>Matières</b>
+        <div class="small">Format : <span class="mono">01=Leather|cuir</span></div>
+        <textarea id="mapMaterials"></textarea>
+      </div>
+      <div class="mapbox">
+        <b>Couleurs</b>
+        <div class="small">Noir et blanc inclus : <span class="mono">NO</span>, <span class="mono">BL</span></div>
+        <textarea id="mapColors"></textarea>
+      </div>
+      <div class="mapbox">
+        <b>Hardware</b>
+        <div class="small">Format : <span class="mono">S=Silver|argent</span></div>
+        <textarea id="mapHardware"></textarea>
+      </div>
+    </div>
+    <div class="actions"><button class="secondary" onclick="loadMaps()">Appliquer le dictionnaire</button><button class="secondary" onclick="restoreDefaults()">Valeurs par défaut</button></div>
+    <p class="hint">Important : pour ajouter une future collection, ajoute d’abord son code dans Collections, puis ses modèles dans “Modèles”. Exemple : <span class="mono">NEW:1=Bucket Bag|bucket</span>.</p>
+  </section>
+
+  <section class="card">
+    <h2>4. Résultats <span id="count" class="pill">0 ligne</span></h2>
+    <div class="actions"><button id="downloadCsv" disabled onclick="downloadCSV()">Exporter CSV Shopify</button><button id="downloadXlsx" disabled onclick="downloadXLSX()">Exporter XLSX</button></div>
+    <div class="tablewrap" style="margin-top:14px"><table id="result"><thead></thead><tbody></tbody></table></div>
+  </section>
+</main>
+
+<script>
+const defaults = {
+  collections: {
+    ODY: 'Odyssée|odyssee|ody|hobo',
+    EIL: 'Eileen|eil',
+    EVA: 'Eva|eva'
+  },
+  models: [
+    'ODY:1=Maxi Hobo|maxi',
+    'ODY:2=Large Hobo|large',
+    'ODY:3=Medium Hobo|medium|moyen',
+    'ODY:4=Small Hobo|small|petit',
+    'ODY:5=Mini Hobo|mini',
+    'EIL:1=Clutch|pochette|clutch',
+    'EIL:2=Computer Bag|computer|laptop|ordinateur',
+    'EIL:3=Shoulder Bag|shoulder',
+    'EIL:4=Asymmetric Shoulder Bag|asymmetric|asymétrique',
+    'EVA:1=Eva Model 1|eva'
+  ],
+  materials: {
+    '01': 'Leather|cuir',
+    '02': 'Suede|daim',
+    '03': 'Canvas|toile',
+    '04': 'Raffia|raffia',
+    '05': 'Exotic|croco|python'
+  },
+  colors: {
+    NO: 'Noir|black|noire',
+    BL: 'Blanc|white|blanche',
+    BE: 'Beige|beige',
+    BR: 'Brown|marron|brown',
+    TA: 'Taupe|taupe',
+    CR: 'Cream|cream|crème|ecru|écru',
+    RD: 'Red|rouge',
+    NV: 'Navy|marine',
+    GN: 'Green|vert'
+  },
+  hardware: {
+    S: 'Silver|argent',
+    G: 'Gold|or|doré|dore',
+    B: 'Black hardware|black hw|noir hardware'
+  }
+};
+
+let maps = {}, rows = [], headers = [];
+
+function textareaFromObj(obj){ return Object.entries(obj).map(([k,v]) => `${k}=${v}`).join('\n'); }
+function objFromTextarea(id){
+  const out = {};
+  document.getElementById(id).value.split('\n').forEach(line => {
+    const clean = line.trim();
+    if(!clean || clean.startsWith('#')) return;
+    const parts = clean.split('=');
+    if(parts.length >= 2) out[parts[0].trim()] = parts.slice(1).join('=').trim();
+  });
+  return out;
+}
+function parseModels(){
+  const out = {};
+  document.getElementById('mapModels').value.split('\n').forEach(line => {
+    const clean = line.trim();
+    if(!clean || clean.startsWith('#')) return;
+    const [left, ...rightParts] = clean.split('=');
+    const right = rightParts.join('=').trim();
+    if(!left || !right || !left.includes(':')) return;
+    const [collection, model] = left.split(':').map(x => x.trim());
+    if(!out[collection]) out[collection] = {};
+    out[collection][model] = right;
+  });
+  return out;
+}
+function restoreDefaults(){
+  document.getElementById('mapCollections').value = textareaFromObj(defaults.collections);
+  document.getElementById('mapModels').value = defaults.models.join('\n');
+  document.getElementById('mapMaterials').value = textareaFromObj(defaults.materials);
+  document.getElementById('mapColors').value = textareaFromObj(defaults.colors);
+  document.getElementById('mapHardware').value = textareaFromObj(defaults.hardware);
+  loadMaps();
+}
+function loadMaps(){
+  maps = {
+    collections: objFromTextarea('mapCollections'),
+    models: parseModels(),
+    materials: objFromTextarea('mapMaterials'),
+    colors: objFromTextarea('mapColors'),
+    hardware: objFromTextarea('mapHardware')
+  };
+  populateSelects();
+}
+function populateSelects(){
+  fill('mCollection', maps.collections);
+  populateModelSelect();
+  fill('mMaterial', maps.materials);
+  fill('mColor', maps.colors);
+  fill('mHardware', maps.hardware);
+  generateManual();
+}
+function populateModelSelect(){
+  const col = document.getElementById('mCollection').value || Object.keys(maps.collections || {})[0];
+  fill('mModel', maps.models[col] || {});
+}
+function fill(id, obj){
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  Object.entries(obj || {}).forEach(([k,v]) => {
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = `${k} — ${String(v).split('|')[0]}`;
+    el.appendChild(o);
+  });
+}
+function normalize(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function textOf(row){ return normalize(Object.values(row).join(' ')); }
+function matchCodeFromObj(obj, txt){
+  for(const [code, val] of Object.entries(obj || {})){
+    const terms = [code, ...String(val).split('|')].map(t => normalize(t.trim())).filter(Boolean);
+    if(terms.some(t => txt.includes(t))) return code;
+  }
+  return Object.keys(obj || {})[0] || '';
+}
+function inferCollection(row){
+  const txt = textOf(row);
+  for(const [code, val] of Object.entries(maps.collections || {})){
+    const terms = [code, ...String(val).split('|')].map(t => normalize(t.trim())).filter(Boolean);
+    if(terms.some(t => txt.includes(t))) return code;
+  }
+  return Object.keys(maps.collections || {})[0] || 'ODY';
+}
+function makeSku(row){
+  const txt = textOf(row);
+  const col = inferCollection(row);
+  const model = matchCodeFromObj(maps.models[col] || {}, txt);
+  const mat = matchCodeFromObj(maps.materials, txt);
+  const color = matchCodeFromObj(maps.colors, txt);
+  const hw = matchCodeFromObj(maps.hardware, txt);
+  return `${col}${model}_${mat}${color}${hw}`;
+}
+function generateManual(){
+  const sku = `${mCollection.value}${mModel.value}_${mMaterial.value}${mColor.value}${mHardware.value}`;
+  manualSku.value = sku;
+  return sku;
+}
+function copyManual(){ generateManual(); navigator.clipboard.writeText(manualSku.value); }
+function addManualRow(){
+  const sku = generateManual();
+  const modelName = (maps.models[mCollection.value] || {})[mModel.value] || '';
+  rows.push({
+    Title:'MANUAL',
+    Collection:mCollection.value,
+    Model:mModel.value,
+    ModelName:modelName.split('|')[0],
+    Material:mMaterial.value,
+    Color:mColor.value,
+    Hardware:mHardware.value,
+    'NEW SKU':sku
+  });
+  headers = Array.from(new Set([...headers,'Title','Collection','Model','ModelName','Material','Color','Hardware','NEW SKU']));
+  render();
+}
+async function processFile(){
+  loadMaps();
+  const f = document.getElementById('file').files[0];
+  if(!f){ alert('Upload un fichier Shopify d’abord.'); return; }
+  const data = await f.arrayBuffer();
+  const wb = XLSX.read(data, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  rows = XLSX.utils.sheet_to_json(ws, {defval:''});
+  headers = Object.keys(rows[0] || {});
+  const skuCol = document.getElementById('skuCol').value.trim() || 'Variant SKU';
+  const mode = document.getElementById('mode').value;
+  rows = rows.map(r => {
+    const sku = makeSku(r);
+    const col = inferCollection(r);
+    const nr = {...r};
+    if(mode === 'replace'){
+      nr[skuCol] = sku;
+      if(!headers.includes(skuCol)) headers.push(skuCol);
+    } else {
+      nr['NEW SKU'] = sku;
+      if(!headers.includes('NEW SKU')) headers.push('NEW SKU');
+    }
+    nr['SKU SOURCE'] = `${col} model dictionary`;
+    if(!headers.includes('SKU SOURCE')) headers.push('SKU SOURCE');
+    return nr;
+  });
+  render();
+}
+function escapeHtml(v){
+  return String(v ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+function render(){
+  document.getElementById('count').textContent = `${rows.length} ligne${rows.length>1?'s':''}`;
+  downloadCsv.disabled = downloadXlsx.disabled = rows.length === 0;
+  const thead = document.querySelector('#result thead'), tbody = document.querySelector('#result tbody');
+  thead.innerHTML = '<tr>' + headers.map(h => `<th>${escapeHtml(h)}</th>`).join('') + '</tr>';
+  tbody.innerHTML = rows.slice(0,500).map(r => '<tr>' + headers.map(h => {
+    const cls = String(h).toLowerCase().includes('sku') ? 'sku' : '';
+    return `<td class="${cls}">${escapeHtml(r[h])}</td>`;
+  }).join('') + '</tr>').join('');
+}
+function downloadCSV(){
+  const ws = XLSX.utils.json_to_sheet(rows, {header:headers});
+  const csv = XLSX.utils.sheet_to_csv(ws);
+  save(new Blob([csv], {type:'text/csv;charset=utf-8'}), 'kassandre_sku_export.csv');
+}
+function downloadXLSX(){
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows, {header:headers});
+  XLSX.utils.book_append_sheet(wb, ws, 'Shopify Export');
+  XLSX.writeFile(wb, 'kassandre_sku_export.xlsx');
+}
+function save(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function clearAll(){ rows = []; headers = []; render(); }
+restoreDefaults();
+</script>
+</body>
+</html>
